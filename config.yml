@@ -1,0 +1,32 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch:
+
+exporters:
+  debug:
+    verbosity: detailed
+  otlp/jaeger:
+    endpoint: localhost:14317
+    tls:
+      insecure: true
+connectors:
+  traces_to_logs:
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [traces_to_logs, otlp/jaeger, debug]
+    logs:
+      receivers: [traces_to_logs]
+      processors: [batch]
+      exporters: [otlp/jaeger, debug]
+  telemetry:
+    logs:
+      level: debug
+
