@@ -21,7 +21,7 @@ func NewFactory() connector.Factory {
 }
 
 func CreateTraceToLogConnector(_ context.Context, set connector.Settings, cfg component.Config, nextConsumer consumer.Logs) (connector.Traces, error) {
-	t, err := NewTraceToLogsConnector(set.Logger, cfg)
+	t, err := NewTraceToLogsConnector(set.Logger, cfg, nextConsumer)
 	if err != nil {
 		return nil, err
 	}

@@ -5,6 +5,33 @@ receivers:
         endpoint: 0.0.0.0:4317
 
 processors:
+  tail_sampling:
+    decision_wait: 10s
+    policies: [
+      {
+        name: "error_trace_policy",
+        type: status_code,
+        status_code: { status_codes: [ERROR] },
+      },
+      {
+        name: "ratio_non_error_policy",
+        type: and,
+        and: {
+          and_sub_policy: [
+            {
+              name: "non_error_policy",
+              type: status_code,
+              status_code: { status_codes: [OK, UNSET] }
+            },
+            {
+              name: "probabilistic_policy",
+              type: probabilistic,
+              probabilistic: { sampling_percentage: 10 }
+            }
+          ]
+        },
+      }
+    ]
   batch:
 
 exporters:
@@ -14,18 +41,20 @@ exporters:
     endpoint: localhost:14317
     tls:
       insecure: true
+  file:
+    path: ./logs
 connectors:
   traces_to_logs:
 service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch]
-      exporters: [traces_to_logs, otlp/jaeger, debug]
+      processors: [tail_sampling, batch]
+      exporters: [traces_to_logs, otlp/jaeger]
     logs:
       receivers: [traces_to_logs]
       processors: [batch]
-      exporters: [otlp/jaeger, debug]
+      exporters: [file, debug]
   telemetry:
     logs:
       level: debug

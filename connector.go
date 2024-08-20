@@ -20,12 +20,13 @@ type traceToLogConnector struct {
 	logger *zap.Logger
 }
 
-func NewTraceToLogsConnector(logger *zap.Logger, cfg component.Config) (*traceToLogConnector, error) {
+func NewTraceToLogsConnector(logger *zap.Logger, cfg component.Config, logsConsumer consumer.Logs) (*traceToLogConnector, error) {
 	logger.Info("Creating new trace to log connector")
 	conf := cfg.(*Config)
 	return &traceToLogConnector{
-		logger: logger,
-		config: *conf,
+		logger:       logger,
+		config:       *conf,
+		logsConsumer: logsConsumer,
 	}, nil
 }
 
@@ -34,29 +35,30 @@ func (t *traceToLogConnector) Capabilities() consumer.Capabilities {
 }
 
 func (c *traceToLogConnector) ConsumeTraces(ctx context.Context, traces ptrace.Traces) error {
-	allowedTraceIDs := make(map[string]bool)
 	newLogs := plog.NewLogs()
 	for i := 0; i < traces.ResourceSpans().Len(); i++ {
 		rs := traces.ResourceSpans().At(i)
+		newResourceLog := newLogs.ResourceLogs().AppendEmpty()
+		rs.Resource().CopyTo(newResourceLog.Resource())
 		ils := rs.ScopeSpans()
 		for j := 0; j < ils.Len(); j++ {
-			newScopeLog := c.newScopeLogs(newLogs)
+			newScopeLog := newResourceLog.ScopeLogs().AppendEmpty()
 			ils.At(j).Scope().CopyTo(newScopeLog.Scope())
 			spans := ils.At(j).Spans()
 			for k := 0; k < spans.Len(); k++ {
 				span := spans.At(k)
-				traceID := span.TraceID().String()
-				allowedTraceIDs[traceID] = true
+				logRecord := newScopeLog.LogRecords().AppendEmpty()
+				logRecord.SetTraceID(span.TraceID())
+				logRecord.SetSpanID(span.SpanID())
+				logRecord.SetTimestamp(span.StartTimestamp())
+				span.Attributes().CopyTo(logRecord.Attributes())
+				// logRecord.Body().SetStr("Converted from trace")
 			}
 		}
 	}
-	c.logger.Info("Allowing logs with trace IDs", zap.Any("traceIDs", allowedTraceIDs))
-	return c.ExportLogs(ctx, newLogs)
-}
 
-func (c *traceToLogConnector) newScopeLogs(newLogsMap plog.Logs) plog.ScopeLogs {
-	newScopeLog := newLogsMap.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty()
-	return newScopeLog
+	c.logger.Info("Converted traces to logs")
+	return c.ExportLogs(ctx, newLogs)
 }
 
 func (c *traceToLogConnector) ExportLogs(ctx context.Context, ld plog.Logs) error {
